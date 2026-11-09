@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "auryveth-neo"
+version = "0.6.2a1"
+description = "Trainable recurrent language model with persistent neural memory"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+dependencies = ["torch>=2.3,<3", "numpy>=1.26", "sentencepiece>=0.2"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+data = ["pyarrow>=15"]
+
+[tool.setuptools.packages.find]
+include = ["model*", "neural_tokenizer*", "scripts*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

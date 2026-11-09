@@ -1,0 +1,26 @@
+__pycache__/
+.pytest_cache/
+.coverage
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+checkpoints/
+*.pt
+
+# Local datasets, runs, and model files
+/data/
+/runs/
+/results/
+/experiments/
+*.pth
+*.safetensors
+*.gguf
+*.parquet
+*.model
+*.vocab
+*.npy
+*.npz
+.env
+.env.*
