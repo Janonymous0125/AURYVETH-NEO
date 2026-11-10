@@ -14,7 +14,7 @@ cd experiments/pretrained_chat
 ..\..\.venv\Scripts\python.exe neo_chat_experimental.py chat
 ```
 
-During chat, enter `/remember My project code is violet 739`. Use `/new` to clear conversational history but keep memories. Exit and restart chat from the same directory to check persistence. Data is written under `data/neo_memories.sqlite3` and should not be committed. The persistence test passes locally (4/4); actual pretrained generation has **not** been run in the review environment.
+During chat, enter `/remember My project code is violet 739`. Use `/new` to clear conversational history but keep memories. Exit and restart chat from the same directory to check persistence. Data is written under `data/neo_memories.sqlite3` and should not be committed. The persistence test passes locally (5/5); actual pretrained generation has **not** been run in the review environment.
 
 To train a neural LoRA adapter explicitly, create a private JSONL file with `{"prompt":"...","answer":"..."}` rows and run:
 
