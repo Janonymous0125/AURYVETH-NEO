@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 class SentencePieceTokenizer:
@@ -56,22 +57,39 @@ def train_sentencepiece_bpe(corpus_paths: list[str | Path], output_prefix: str |
     if not paths or any(not p.is_file() or p.stat().st_size == 0 for p in paths):
         raise ValueError("Provide nonempty corpus files")
     prefix = Path(output_prefix)
+    model_path = prefix.parent / (prefix.name + '.model')
+    vocab_path = prefix.parent / (prefix.name + '.vocab')
+    for path in (model_path, vocab_path):
+        if path.exists() or path.is_symlink():
+            raise FileExistsError(f"Tokenizer output already exists: {path}")
     prefix.parent.mkdir(parents=True, exist_ok=True)
-    # Disable the lossy default normalization. Byte fallback keeps uncommon
-    # Unicode characters encodable; no artificial 50k placeholders.
-    spm.SentencePieceTrainer.train(
-        input=','.join(str(p.resolve()) for p in paths),
-        model_prefix=str(prefix.resolve()), vocab_size=vocab_size, model_type='bpe',
-        character_coverage=1.0, byte_fallback=True,
-        normalization_rule_name='identity', add_dummy_prefix=False,
-        remove_extra_whitespaces=False, split_by_whitespace=False,
-        bos_id=1, eos_id=2, unk_id=0, pad_id=-1,
-        hard_vocab_limit=True, max_sentence_length=16384,
-    )
-    result = SentencePieceTokenizer(prefix.with_suffix('.model'))
-    if result.vocab_size != vocab_size:
-        raise RuntimeError(f"Expected {vocab_size} real tokens, got {result.vocab_size}")
-    for sample in ('Hello 你好 🍎!', ' A  B\n', '中文和English', '👩\u200d💻'):
-        if result.decode(result.encode(sample)) != sample:
-            raise RuntimeError("Trained tokenizer failed exact Unicode round trip")
-    return prefix.with_suffix('.model')
+    with TemporaryDirectory(prefix='.sentencepiece-', dir=prefix.parent.resolve()) as temporary:
+        staged_prefix = Path(temporary) / 'tokenizer'
+        # Disable lossy normalization. Byte fallback keeps uncommon Unicode
+        # characters encodable without padding the vocabulary with fake tokens.
+        spm.SentencePieceTrainer.train(
+            input=','.join(str(p.resolve()) for p in paths),
+            model_prefix=str(staged_prefix), vocab_size=vocab_size, model_type='bpe',
+            character_coverage=1.0, byte_fallback=True,
+            normalization_rule_name='identity', add_dummy_prefix=False,
+            remove_extra_whitespaces=False, split_by_whitespace=False,
+            bos_id=1, eos_id=2, unk_id=0, pad_id=-1,
+            hard_vocab_limit=True, max_sentence_length=16384,
+        )
+        staged_model = staged_prefix.with_suffix('.model')
+        result = SentencePieceTokenizer(staged_model)
+        if result.vocab_size != vocab_size:
+            raise RuntimeError(f"Expected {vocab_size} real tokens, got {result.vocab_size}")
+        for sample in ('Hello 你好 🍎!', ' A  B\n', '中文和English', '👩\u200d💻'):
+            if result.decode(result.encode(sample)) != sample:
+                raise RuntimeError("Trained tokenizer failed exact Unicode round trip")
+
+        # Each link is atomic and refuses an existing destination, including
+        # one published by a concurrent trainer. Publish the model last.
+        vocab_path.hardlink_to(staged_prefix.with_suffix('.vocab'))
+        try:
+            model_path.hardlink_to(staged_model)
+        except OSError:
+            vocab_path.unlink()
+            raise
+    return model_path
