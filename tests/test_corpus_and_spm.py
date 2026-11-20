@@ -27,6 +27,56 @@ def test_tokenizer_fails_on_insufficient_corpus_for_50k(tmp_path):
         train_sentencepiece_bpe([path],tmp_path/'small_vocab',vocab_size=50000)
 
 
+def test_dotted_tokenizer_prefix_is_preserved(tmp_path):
+    source = tmp_path / 'train.txt'
+    source.write_text(''.join(f'alpha{i} 你好 🍎 beta.\n' for i in range(150)), encoding='utf8')
+
+    model = train_sentencepiece_bpe([source], tmp_path / 'tokenizer.v2', vocab_size=400)
+
+    assert model == tmp_path / 'tokenizer.v2.model'
+    assert model.is_file()
+    assert (tmp_path / 'tokenizer.v2.vocab').is_file()
+    assert SentencePieceTokenizer(model).vocab_size == 400
+
+
+@pytest.mark.parametrize('existing_suffixes', [('.model', '.vocab'), ('.model',), ('.vocab',)])
+def test_tokenizer_training_does_not_replace_existing_artifacts(tmp_path, existing_suffixes):
+    source = tmp_path / 'train.txt'
+    source.write_text(''.join(f'alpha{i} 你好 🍎 beta.\n' for i in range(150)), encoding='utf8')
+    prefix = tmp_path / 'tokenizer'
+    train_sentencepiece_bpe([source], prefix, vocab_size=400)
+    artifacts = {suffix: prefix.with_suffix(suffix) for suffix in ('.model', '.vocab')}
+    original = {suffix: artifacts[suffix].read_bytes() for suffix in existing_suffixes}
+    for suffix in artifacts.keys() - original.keys():
+        artifacts[suffix].unlink()
+    source.write_text(''.join(f'gamma{i} 中文 😀 delta.\n' for i in range(150)), encoding='utf8')
+
+    with pytest.raises(FileExistsError):
+        train_sentencepiece_bpe([source], prefix, vocab_size=400)
+
+    assert {suffix: path.read_bytes() for suffix, path in artifacts.items() if path.exists()} == original
+
+
+def test_tokenizer_publication_rolls_back_its_sidecar_on_model_conflict(tmp_path, monkeypatch):
+    source = tmp_path / 'train.txt'
+    source.write_text(''.join(f'alpha{i} 你好 🍎 beta.\n' for i in range(150)), encoding='utf8')
+    prefix = tmp_path / 'tokenizer'
+    model_path = prefix.with_suffix('.model')
+    hardlink_to = Path.hardlink_to
+
+    def publish_with_conflict(path, target):
+        if path == model_path:
+            path.write_bytes(b'existing model')
+        return hardlink_to(path, target)
+
+    monkeypatch.setattr(Path, 'hardlink_to', publish_with_conflict)
+    with pytest.raises(FileExistsError):
+        train_sentencepiece_bpe([source], prefix, vocab_size=400)
+
+    assert model_path.read_bytes() == b'existing model'
+    assert not prefix.with_suffix('.vocab').exists()
+
+
 def test_sentencepiece_checkpoint_training_pipeline(tmp_path,monkeypatch):
     """Real tokenizer, trainer, checkpoint, loader and Unicode prompts together."""
     import sys
